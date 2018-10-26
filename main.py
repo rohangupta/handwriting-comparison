@@ -6,10 +6,12 @@ import csv
 import math
 import matplotlib.pyplot
 from matplotlib import pyplot as plt
+import random
 
 CONCAT = "concatenate"
 SUBTR = "subtract"
 HUMAN = "human"
+HALF_LEN_HUMAN = 791
 
 dataset = HUMAN
 setting = CONCAT
@@ -17,10 +19,20 @@ trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-m = 10
+m = 8
 lambda_c = 0.03
 phi = []
-len_data = 791
+epoch = 100
+La = 2
+eta = 0.01
+
+trainErms = []
+validErms = []
+testErms = []
+
+trainAcc = []
+validAcc = []
+testAcc = []
 
 ### Function for importing raw data
 def importRawData(filePath):
@@ -58,14 +70,23 @@ def importRawTarget(filePath):
             targetMatrix.append(targetRow)
 
         targetMatrix = targetMatrix[1:]
-        return targetMatrix[0:791]
+
+        if (len(targetMatrix) > HALF_LEN_HUMAN):
+            randIndices = random.sample(np.arange(len(targetMatrix)), HALF_LEN_HUMAN)
+
+            randMatrix = []
+            for i in range(HALF_LEN_HUMAN):
+                randMatrix.append(targetMatrix[randIndices[i]])
+            return randMatrix
+
+        return targetMatrix
 
 ### Function for creating the dataset
 def createDataset(dataDict, pairs, setting):
     dataset = []
 
     if (setting == CONCAT):
-        for i in range(len_data):
+        for i in range(HALF_LEN_HUMAN):
             row = []
             list1 = []
             list2 = []
@@ -189,7 +210,6 @@ diffDataset = createDataset(humanDataDict, diffPairs, CONCAT)
 mainDataset = joinShuffleDataset(sameDataset, diffDataset)
 
 
-#rawImg, rawData, rawTarget = np.split(mainDataset[0], [2, 20])
 rawData = mainDataset[:18, :]
 rawTarget = mainDataset[18, :]
 rawTarget = rawTarget.transpose()
@@ -204,10 +224,7 @@ print("Validation data shape: ", validData.shape, "Validation target shape: ", v
 print("Testing data shape: ", testData.shape, "Testing target shape: ", testTarget.shape)
 
 
-### Closed Form Solution [Finding Weights using Moore- Penrose pseudo- Inverse Matrix]
-ErmsArr = []
-AccuracyArr = []
-
+#Performing k-means clustering
 kMeans = KMeans(n_clusters=m, random_state=0).fit(np.transpose(trainData))
 mu = kMeans.cluster_centers_
 
@@ -227,18 +244,9 @@ w = np.matrix(wVec).reshape((m, 1))
 #w = (10x1)
 print("Weights shape: ", w.shape)
 
-La = 2
-eta = 0.01
-trainErms = []
-validErms = []
-testErms = []
-
-trainAcc = []
-validAcc = []
-testAcc = []
 
 ### Performing Gradient Descent
-for i in range(1266):
+for i in range(epoch):
     #trainTarget[i] = (1), w = (10x1), trainPhi[i] = (1x10)
     delta_Ed = - np.dot((trainTarget[i] - np.dot(np.transpose(w), np.transpose(trainPhi[i]))), trainPhi[i])
     delta_Ed = np.transpose(delta_Ed)
@@ -265,7 +273,7 @@ for i in range(1266):
     validErms.append(tempErms)
     validAcc.append(tempAcc)
 
-    print("Iteration ", str(i+1), " : Erms = ", trainErms[i])
+    print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
 
 testY = calculateOutput(w, testPhi)
 tempErms, tempAcc = calculateErmsnAcc(testY, testTarget)
@@ -273,13 +281,10 @@ testErms.append(tempErms)
 testAcc.append(tempAcc)
 
 print ('----------Gradient Descent Solution--------------------')
-print ("m = " + str(m) + ", lambda = " + str(lambda_c) + ", eta = " + str(eta))
+print ("m = " + str(m) + ", lambda = " + str(lambda_c) + ", eta = " + str(eta) + ", epoch = " + str(epoch))
 print ("Erms Training   = " + str(np.around(min(trainErms),5)))
 print ("Erms Validation = " + str(np.around(min(validErms),5)))
 print ("Erms Testing    = " + str(np.around(min(testErms),5)))
-
-
-
 
 
 
