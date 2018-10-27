@@ -1,4 +1,8 @@
 # coding: utf-8
+'''
+@author: rohangupta
+'''
+
 from sklearn.cluster import KMeans
 import numpy as np
 import pandas as pd
@@ -8,22 +12,49 @@ import matplotlib.pyplot
 from matplotlib import pyplot as plt
 import random
 
-CONCAT = "concatenate"
-SUBTR = "subtract"
-HUMAN = "human"
-HALF_LEN_HUMAN = 791
+CONCATENATION = "Concatenation"
+SUBTRACTION = "Subtraction"
+HUMAN_OBSERVED = "Human Observed Dataset"
+GSC = "GSC Dataset"
 
-dataset = HUMAN
-setting = CONCAT
+################################
+datasetType = HUMAN_OBSERVED        #HUMAN_OBSERVED / GSC
+featureSetting = SUBTRACTION        #CONCATENATION / SUBTRACTION 
+doLinearReg = True                  #True / False
+doLogisticReg = False                #True / False
+doNeuralNet = True                  #True / False
+################################
+
+if (datasetType == HUMAN_OBSERVED):
+    featuresFile = "Human/HumanObserved_Features_Data.csv"
+    samePairsFile = "Human/same_pairs.csv"
+    diffPairsFIle = "Human/diffn_pairs.csv"
+    HALF_LENGTH_DB = 791
+
+    if (featureSetting == CONCATENATION):
+        LENGTH_FEATURES = 18
+    elif (featureSetting == SUBTRACTION):
+        LENGTH_FEATURES = 9
+
+elif (datasetType == GSC):
+    featuresFile = "Human/GSC_Features.csv"
+    samePairsFile = "Human/same_pairs.csv"
+    diffPairsFIle = "Human/diffn_pairs.csv"
+    HALF_LENGTH_DB = 71531
+
+    if (featureSetting == CONCATENATION):
+        LENGTH_FEATURES = 1024
+    elif (featureSetting == SUBTRACTION):
+        LENGTH_FEATURES = 512
+
 trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-m = 8
-lambda_c = 0.03
+m = 6
 phi = []
-epoch = 100
-La = 2
+epoch = 40
+la = 2
 eta = 0.01
 
 trainErms = []
@@ -34,93 +65,70 @@ trainAcc = []
 validAcc = []
 testAcc = []
 
+
 ### Function for importing raw data
 def importRawData(filePath):
-    dataMatrix = []
-    with open(filePath, 'rU') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            dataRow = []
-            for column in row:
-                dataRow.append(column)
-            dataMatrix.append(dataRow)
+    df = pd.read_csv(filePath)
+    dataDict = {}
+    for i in range(len(df)):
+        key = df.iat[i, 0]
+        value = []
+        for j in range(1, df.shape[1]):
+            value.append(int(df.iat[i, j]))
 
-        dataMatrix = dataMatrix[1:]
-        dataDict = {}
-        for i in range(len(dataMatrix)):
-            key = dataMatrix[i][1]
-            value = []
-
-            for j in range(2,11):
-                value.append(int(dataMatrix[i][j]))
-
-            dataDict[key] = value
-
+        dataDict[key] = value
     return dataDict
 
 ### Function for importing raw target
 def importRawTarget(filePath):
-    targetMatrix = []
-    with open(filePath, 'rU') as f:
-        reader = csv.reader(f)
-        for row in reader:   
-            targetRow = []
-            for column in row:
-                targetRow.append(column)
-            targetMatrix.append(targetRow)
+    df = pd.read_csv(filePath)
+    if (len(df) > HALF_LENGTH_DB):
+        randIndices = random.sample(np.arange(len(df)), HALF_LENGTH_DB)
 
-        targetMatrix = targetMatrix[1:]
-
-        if (len(targetMatrix) > HALF_LEN_HUMAN):
-            randIndices = random.sample(np.arange(len(targetMatrix)), HALF_LEN_HUMAN)
-
-            randMatrix = []
-            for i in range(HALF_LEN_HUMAN):
-                randMatrix.append(targetMatrix[randIndices[i]])
-            return randMatrix
-
-        return targetMatrix
+        randMatrix = []
+        for i in range(HALF_LENGTH_DB):
+            randMatrix.append(df.iloc[randIndices[i], :])
+        return np.asmatrix(randMatrix)
+    return np.asmatrix(df)
 
 ### Function for creating the dataset
-def createDataset(dataDict, pairs, setting):
+def createDataset(dataDict, pairs, featureSetting):
     dataset = []
+    for i in range(HALF_LENGTH_DB):
+        row = []
+        list1 = []
+        list2 = []
 
-    if (setting == CONCAT):
-        for i in range(HALF_LEN_HUMAN):
-            row = []
-            list1 = []
-            list2 = []
-
-            #row.append(pairs[i][0])
-            #row.append(pairs[i][1])
-
-            list1 = dataDict[pairs[i][0]]
-            list2 = dataDict[pairs[i][1]]
+        #row.append(pairs[i][0])
+        #row.append(pairs[i][1])
+        list1 = dataDict[pairs[i, 0]]
+        list2 = dataDict[pairs[i, 1]]
+        
+        if (featureSetting == CONCATENATION):
             row = row+list1+list2
+        elif (featureSetting == SUBTRACTION):
+            for i in range(len(list1)):
+                row.append(list1[i] - list2[i])
 
-            row.append(int(pairs[i][2]))
-            dataset.append(row)
-
+        row.append(int(pairs[i, 2]))
+        dataset.append(row)
     return np.asmatrix(dataset)
 
 ### Function for joining and shuffling the datasets
 def joinShuffleDataset(dataset1, dataset2):
     dataset = np.concatenate((dataset1, dataset2), axis=0)
     np.random.shuffle(dataset)
-
-    dataset = np.transpose(dataset)
-    #dataset = (8x1582)
     return dataset
 
 ### Function for partitioning dataset
 def partitionData(rawData, tr_percent, va_percent, te_percent):
-    train_len = int(math.ceil(np.size(rawData, 1) * tr_percent * 0.01))
-    valid_len = int(np.size(rawData, 1) * va_percent * 0.01)
-    test_len = int(np.size(rawData, 1) * te_percent * 0.01)
+    train_len = int(math.ceil(rawData.shape[0] * tr_percent * 0.01))
+    valid_len = int(rawData.shape[0] * va_percent * 0.01)
+    test_len = int(rawData.shape[0] * te_percent * 0.01)
 
-    trainX = rawData[:, 0:train_len]
-    validX = rawData[:, train_len:(train_len+valid_len)]
-    testX = rawData[:, (train_len+valid_len):]
+    trainX = rawData[0:train_len, :]
+    validX = rawData[train_len:(train_len+valid_len), :]
+    testX = rawData[(train_len+valid_len):, 0]
     return trainX, validX, testX
 
 ### Function for partitioning target
@@ -137,24 +145,22 @@ def partitionTarget(rawTarget, tr_percent, va_percent, te_percent):
 ### Function for calculating Big Sigma
 def calculateBigSigma(rawData, mu, tr_percent):
     #rawData = (18xn)
-    bigSigma = np.zeros((np.size(rawData, 0), np.size(rawData, 0)))
+    bigSigma = np.zeros((rawData.shape[1], rawData.shape[1]))
     #bigSigma = (18x18)
-    rawDataT = np.transpose(rawData)
-    #rawDataT = (nx18)
-    training_len = int(math.ceil(np.size(rawDataT, 0)*(tr_percent*0.01)))
+    training_len = int(math.ceil(rawData.shape[0]*(tr_percent*0.01)))
     varVect = []
 
-    for i in range(0, np.size(rawDataT, 1)):
+    for j in range(rawData.shape[1]):
         vct = []
-        for j in range(0, training_len):
+        for i in range(0, training_len):
             vct.append(rawData[i, j])
         varVect.append(np.var(vct))
         #varVect = (18)
 
-    for i in range(len(rawData)):
+    for i in range(rawData.shape[1]):
         bigSigma[i, i] = varVect[i]
     
-    ###bigSigma = np.dot(200, bigSigma)
+    bigSigma = np.dot(200, bigSigma)
     return bigSigma
 
 ### Function for calculating Radial Basis Function
@@ -168,13 +174,11 @@ def calculateBasisFn(dataRow, muRow, bigSigmaInv):
 
 ### Function for calculating Design Matrix (Phi)
 def calculatePhi(rawData, mu, bigSigma):
-    #rawDataT = [nx41]
-    rawDataT = np.transpose(rawData)
-    phi = np.zeros((len(rawDataT), len(mu)))
+    phi = np.zeros((len(rawData), len(mu)))
     bigSigmaInv = np.linalg.inv(bigSigma)
-    for i in range(0, len(rawDataT)):
+    for i in range(0, len(rawData)):
         for j in range(0, len(mu)):
-            phi[i, j] = calculateBasisFn(rawDataT[i], mu[j], bigSigmaInv)
+            phi[i, j] = calculateBasisFn(rawData[i], mu[j], bigSigmaInv)
 
     return np.matrix(phi)
 
@@ -199,20 +203,26 @@ def calculateErmsnAcc(y, t):
     Acc = float(count*100)/len(t)
     return Erms, Acc
 
+### Sigmoid function
+def sigmoid(X):
+    return 1/(1 + np.exp(-X))
+
+
+
 ### Import and Prepare Dataset
-humanDataDict = importRawData("Human/HumanObserved_Features_Data.csv")
-samePairs = importRawTarget("Human/same_pairs.csv")
-diffPairs = importRawTarget("Human/diffn_pairs.csv")
+humanDataDict = importRawData(featuresFile)
+samePairs = importRawTarget(samePairsFile)
+diffPairs = importRawTarget(diffPairsFIle)
 
-sameDataset = createDataset(humanDataDict, samePairs, CONCAT)
-diffDataset = createDataset(humanDataDict, diffPairs, CONCAT)
+sameDataset = createDataset(humanDataDict, samePairs, featureSetting)
+diffDataset = createDataset(humanDataDict, diffPairs, featureSetting)
 
+### Joining and Shuffling Dataset
 mainDataset = joinShuffleDataset(sameDataset, diffDataset)
 
-
-rawData = mainDataset[:18, :]
-rawTarget = mainDataset[18, :]
-rawTarget = rawTarget.transpose()
+### Splitting Dataset into Features and Target
+rawData = mainDataset[:, :LENGTH_FEATURES]
+rawTarget = mainDataset[:, LENGTH_FEATURES]
 
 print("Data Shape: ", rawData.shape)
 print("Target Shape: ", rawTarget.shape)
@@ -224,67 +234,73 @@ print("Validation data shape: ", validData.shape, "Validation target shape: ", v
 print("Testing data shape: ", testData.shape, "Testing target shape: ", testTarget.shape)
 
 
-#Performing k-means clustering
-kMeans = KMeans(n_clusters=m, random_state=0).fit(np.transpose(trainData))
-mu = kMeans.cluster_centers_
+### Linear Regerssion Solution
+if (doLinearReg):
+
+    #Performing k-means clustering
+    kMeans = KMeans(n_clusters=m, random_state=0).fit(trainData)
+    mu = kMeans.cluster_centers_
+
+    bigSigma = calculateBigSigma(rawData, mu, trainPercent)
+    print("Big Sigma shape: ", bigSigma.shape)
+
+    trainPhi = calculatePhi(trainData, mu, bigSigma)
+    print("Training Phi shape: ", trainPhi.shape)
+    validPhi = calculatePhi(validData, mu, bigSigma)
+    testPhi = calculatePhi(testData, mu, bigSigma) 
+
+    #Initializing Weights
+    #w = np.zeros(len(trainPhi[0]))
+    wVec = [0 for i in range(m)]
+    w = np.matrix(wVec).reshape((m, 1))
+    #w = (10x1)
+    print("Weights shape: ", w.shape)
 
 
-bigSigma = calculateBigSigma(rawData, mu, trainPercent)
-print("Big Sigma shape:", bigSigma.shape)
+    ### Performing Stochastic Gradient Descent
+    for i in range(epoch):
+        #trainTarget[i] = (1), w = (10x1), trainPhi[i] = (1x10)
+        delta_Ed = - np.dot((trainTarget[i] - np.dot(np.transpose(w), np.transpose(trainPhi[i]))), trainPhi[i])
+        delta_Ed = np.transpose(delta_Ed)
+        la_delta_Ew = np.dot(la, w)
+        delta_E = np.add(delta_Ed, la_delta_Ew)
+        delta_w = - np.dot(eta, delta_E)
+        w_new = np.add(w, delta_w)
+        w = w_new
 
-trainPhi = calculatePhi(trainData, mu, bigSigma)
-print("Training Phi shape: ", trainPhi.shape)
-validPhi = calculatePhi(validData, mu, bigSigma)
-testPhi = calculatePhi(testData, mu, bigSigma) 
+        trainY = calculateOutput(w, trainPhi)
+        tempErms, tempAcc = calculateErmsnAcc(trainY, trainTarget)
+        trainErms.append(tempErms)
+        trainAcc.append(tempAcc)
 
-#Initializing Weights
-#w = np.zeros(len(trainPhi[0]))
-wVec = [0 for i in range(m)]
-w = np.matrix(wVec).reshape((m, 1))
-#w = (10x1)
-print("Weights shape: ", w.shape)
+        validY = calculateOutput(w, validPhi)
+        tempErms, tempAcc = calculateErmsnAcc(validY, validTarget)
+        validErms.append(tempErms)
+        validAcc.append(tempAcc)
+
+        print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
+
+    testY = calculateOutput(w, testPhi)
+    tempErms, tempAcc = calculateErmsnAcc(testY, testTarget)
+    testErms.append(tempErms)
+    testAcc.append(tempAcc)
+
+    print ('-----Linear Regression Performance using Stochastic Gradient Descent-----')
+    print ("Dataset Type = " + datasetType)
+    print ("Feature Setting = " + featureSetting)
+    print ("m = " + str(m) + ", lambda = " + str(la) + ", eta = " + str(eta) + ", epoch = " + str(epoch))
+    print ("Erms Training   = " + str(np.around(min(trainErms),5)))
+    print ("Erms Validation = " + str(np.around(min(validErms),5)))
+    print ("Erms Testing    = " + str(np.around(min(testErms),5)))
 
 
-### Performing Gradient Descent
-for i in range(epoch):
-    #trainTarget[i] = (1), w = (10x1), trainPhi[i] = (1x10)
-    delta_Ed = - np.dot((trainTarget[i] - np.dot(np.transpose(w), np.transpose(trainPhi[i]))), trainPhi[i])
-    delta_Ed = np.transpose(delta_Ed)
-    #delta_Ed = (10x1)
-    la_delta_Ew = np.dot(La, w)
-    #la_delta_Ew = (10x1)
-    delta_E = np.add(delta_Ed, la_delta_Ew)
-    #delta_E = (10x1)
-    delta_w = - np.dot(eta, delta_E)
-    #delta_w = (10x1)
-    w_new = np.add(w, delta_w)
-    #w_new = (10x1)
-    w = w_new
+### Logistic Regression Solution
+if(doLogisticReg):
 
-    trainY = calculateOutput(w, trainPhi)
-    #trainY = (1266,1)
+    X_count = trainData.shape[1]
 
-    tempErms, tempAcc = calculateErmsnAcc(trainY, trainTarget)
-    trainErms.append(tempErms)
-    trainAcc.append(tempAcc)
+    theta = np.zeros(X_count)
 
-    validY = calculateOutput(w, validPhi)
-    tempErms, tempAcc = calculateErmsnAcc(validY, validTarget)
-    validErms.append(tempErms)
-    validAcc.append(tempAcc)
-
-    print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
-
-testY = calculateOutput(w, testPhi)
-tempErms, tempAcc = calculateErmsnAcc(testY, testTarget)
-testErms.append(tempErms)
-testAcc.append(tempAcc)
-
-print ('----------Gradient Descent Solution--------------------')
-print ("m = " + str(m) + ", lambda = " + str(lambda_c) + ", eta = " + str(eta) + ", epoch = " + str(epoch))
-print ("Erms Training   = " + str(np.around(min(trainErms),5)))
-print ("Erms Validation = " + str(np.around(min(validErms),5)))
-print ("Erms Testing    = " + str(np.around(min(testErms),5)))
 
 
 
