@@ -33,25 +33,28 @@ if (datasetType == HUMAN_OBSERVED):
 
     if (featureSetting == CONCATENATION):
         LENGTH_FEATURES = 18
+        m = 7
     elif (featureSetting == SUBTRACTION):
         LENGTH_FEATURES = 9
+        m = 3
 
 elif (datasetType == GSC):
-    featuresFile = "Human/GSC_Features.csv"
-    samePairsFile = "Human/same_pairs.csv"
-    diffPairsFIle = "Human/diffn_pairs.csv"
+    featuresFile = "GSC/GSC_Features.csv"
+    samePairsFile = "GSC/same_pairs.csv"
+    diffPairsFIle = "GSC/diffn_pairs.csv"
     HALF_LENGTH_DB = 71531
 
     if (featureSetting == CONCATENATION):
         LENGTH_FEATURES = 1024
+        m = 100
     elif (featureSetting == SUBTRACTION):
         LENGTH_FEATURES = 512
+        m = 50
 
 trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-m = 6
 phi = []
 epoch = 40
 la = 2
@@ -77,6 +80,7 @@ def importRawData(filePath):
             value.append(int(df.iat[i, j]))
 
         dataDict[key] = value
+    print("Data Imported!")
     return dataDict
 
 ### Function for importing raw target
@@ -89,12 +93,13 @@ def importRawTarget(filePath):
         for i in range(HALF_LENGTH_DB):
             randMatrix.append(df.iloc[randIndices[i], :])
         return np.asmatrix(randMatrix)
+    print("Target Imported!")
     return np.asmatrix(df)
 
 ### Function for creating the dataset
 def createDataset(dataDict, pairs, featureSetting):
     dataset = []
-    for i in range(HALF_LENGTH_DB):
+    for i in range(0, HALF_LENGTH_DB):
         row = []
         list1 = []
         list2 = []
@@ -107,17 +112,19 @@ def createDataset(dataDict, pairs, featureSetting):
         if (featureSetting == CONCATENATION):
             row = row+list1+list2
         elif (featureSetting == SUBTRACTION):
-            for i in range(len(list1)):
-                row.append(list1[i] - list2[i])
+            for j in range(len(list1)):
+                row.append(list1[j] - list2[j])
 
         row.append(int(pairs[i, 2]))
         dataset.append(row)
+    print("Dataset Created!")
     return np.asmatrix(dataset)
 
 ### Function for joining and shuffling the datasets
 def joinShuffleDataset(dataset1, dataset2):
     dataset = np.concatenate((dataset1, dataset2), axis=0)
     np.random.shuffle(dataset)
+    print("Dataset Joined and Shuffled!")
     return dataset
 
 ### Function for partitioning dataset
@@ -128,7 +135,7 @@ def partitionData(rawData, tr_percent, va_percent, te_percent):
 
     trainX = rawData[0:train_len, :]
     validX = rawData[train_len:(train_len+valid_len), :]
-    testX = rawData[(train_len+valid_len):, 0]
+    testX = rawData[(train_len+valid_len):, :]
     return trainX, validX, testX
 
 ### Function for partitioning target
@@ -142,26 +149,49 @@ def partitionTarget(rawTarget, tr_percent, va_percent, te_percent):
     testT = rawTarget[train_len+valid_len:]
     return trainT, validT, testT
 
+### Function for calculating Mu
+def calculateMu(data, m):
+    kMeans = KMeans(n_clusters=m, random_state=0).fit(data)
+    return np.asmatrix(kMeans.cluster_centers_)
+
 ### Function for calculating Big Sigma
 def calculateBigSigma(rawData, mu, tr_percent):
-    #rawData = (18xn)
-    bigSigma = np.zeros((rawData.shape[1], rawData.shape[1]))
-    #bigSigma = (18x18)
+    #bigSigma = np.zeros((rawData.shape[1], rawData.shape[1]))
     training_len = int(math.ceil(rawData.shape[0]*(tr_percent*0.01)))
     varVect = []
+    delIndices = []
 
     for j in range(rawData.shape[1]):
         vct = []
         for i in range(0, training_len):
             vct.append(rawData[i, j])
-        varVect.append(np.var(vct))
-        #varVect = (18)
 
-    for i in range(rawData.shape[1]):
+        colVar = np.var(vct)
+        if (colVar == 0.0):
+            delIndices.append(j)
+        else:
+            varVect.append(colVar)
+
+    print(len(varVect))
+    bigSigma = np.zeros((len(varVect), len(varVect)))
+    for i in range(len(varVect)):
         bigSigma[i, i] = varVect[i]
     
     bigSigma = np.dot(200, bigSigma)
-    return bigSigma
+    print("Big Sigma Calculated!")
+
+    #print(delIndices)
+    return bigSigma, delIndices
+
+### Function for deleting Columns with zero variance
+def delZeroVarColumns(trainData, validData, testData, mu, delIndices):
+    if (len(delIndices) > 0): 
+        trainData = np.delete(trainData, delIndices, axis=1)
+        validData = np.delete(validData, delIndices, axis=1)
+        testData = np.delete(testData, delIndices, axis=1)
+        mu = np.delete(mu, delIndices, axis=1)
+        print("Removed " + str(len(delIndices)) + " Columns")
+    return trainData, validData, testData, mu
 
 ### Function for calculating Radial Basis Function
 def calculateBasisFn(dataRow, muRow, bigSigmaInv):
@@ -173,21 +203,19 @@ def calculateBasisFn(dataRow, muRow, bigSigmaInv):
     return phi_x
 
 ### Function for calculating Design Matrix (Phi)
-def calculatePhi(rawData, mu, bigSigma):
-    phi = np.zeros((len(rawData), len(mu)))
+def calculatePhi(data, mu, bigSigma):
+    phi = np.zeros((len(data), len(mu)))
     bigSigmaInv = np.linalg.inv(bigSigma)
-    for i in range(0, len(rawData)):
+    for i in range(0, len(data)):
         for j in range(0, len(mu)):
-            phi[i, j] = calculateBasisFn(rawData[i], mu[j], bigSigmaInv)
-
+            phi[i, j] = calculateBasisFn(data[i], mu[j], bigSigmaInv)
+    print("Phi Calculated!")
     return np.matrix(phi)
 
 ### Function for calculating Output (y)
 def calculateOutput(w, phi):
-    #w = (10x1), phi = (nx10)
     y = np.dot(np.transpose(w), np.transpose(phi))
     y = np.transpose(y)
-    #y = (10x1)
     return y
 
 ### Function for calculating Error
@@ -216,9 +244,12 @@ diffPairs = importRawTarget(diffPairsFIle)
 
 sameDataset = createDataset(humanDataDict, samePairs, featureSetting)
 diffDataset = createDataset(humanDataDict, diffPairs, featureSetting)
+print(sameDataset.shape)
+print(diffDataset.shape)
 
 ### Joining and Shuffling Dataset
 mainDataset = joinShuffleDataset(sameDataset, diffDataset)
+print("Dataset Shape: ", mainDataset.shape)
 
 ### Splitting Dataset into Features and Target
 rawData = mainDataset[:, :LENGTH_FEATURES]
@@ -236,24 +267,25 @@ print("Testing data shape: ", testData.shape, "Testing target shape: ", testTarg
 
 ### Linear Regerssion Solution
 if (doLinearReg):
+    mu = calculateMu(trainData, m)
+    print("Mu Shape: ", mu.shape)
 
-    #Performing k-means clustering
-    kMeans = KMeans(n_clusters=m, random_state=0).fit(trainData)
-    mu = kMeans.cluster_centers_
-
-    bigSigma = calculateBigSigma(rawData, mu, trainPercent)
+    bigSigma, delIndices = calculateBigSigma(rawData, mu, trainPercent)
     print("Big Sigma shape: ", bigSigma.shape)
+
+    trainData, validData, testData, mu = delZeroVarColumns(trainData, validData, testData, mu, delIndices)
 
     trainPhi = calculatePhi(trainData, mu, bigSigma)
     print("Training Phi shape: ", trainPhi.shape)
     validPhi = calculatePhi(validData, mu, bigSigma)
+    print("Validation Phi shape: ", validPhi.shape)
     testPhi = calculatePhi(testData, mu, bigSigma) 
+    print("Testing Phi Shape: ", testPhi.shape)
 
     #Initializing Weights
     #w = np.zeros(len(trainPhi[0]))
     wVec = [0 for i in range(m)]
     w = np.matrix(wVec).reshape((m, 1))
-    #w = (10x1)
     print("Weights shape: ", w.shape)
 
 
@@ -292,6 +324,8 @@ if (doLinearReg):
     print ("Erms Training   = " + str(np.around(min(trainErms),5)))
     print ("Erms Validation = " + str(np.around(min(validErms),5)))
     print ("Erms Testing    = " + str(np.around(min(testErms),5)))
+
+
 
 
 ### Logistic Regression Solution
