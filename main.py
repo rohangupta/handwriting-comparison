@@ -17,57 +17,39 @@ SUBTRACTION = "Subtraction"
 HUMAN_OBSERVED = "Human Observed Dataset"
 GSC = "GSC Dataset"
 
-################################
-datasetType = HUMAN_OBSERVED        #HUMAN_OBSERVED / GSC
-featureSetting = SUBTRACTION        #CONCATENATION / SUBTRACTION 
-doLinearReg = True                  #True / False
-doLogisticReg = False                #True / False
-doNeuralNet = True                  #True / False
-################################
-
-if (datasetType == HUMAN_OBSERVED):
-    featuresFile = "Human/HumanObserved_Features_Data.csv"
-    samePairsFile = "Human/same_pairs.csv"
-    diffPairsFIle = "Human/diffn_pairs.csv"
-    HALF_LENGTH_DB = 791
-
-    if (featureSetting == CONCATENATION):
-        LENGTH_FEATURES = 18
-        m = 7
-    elif (featureSetting == SUBTRACTION):
-        LENGTH_FEATURES = 9
-        m = 3
-
-elif (datasetType == GSC):
-    featuresFile = "GSC/GSC_Features.csv"
-    samePairsFile = "GSC/same_pairs.csv"
-    diffPairsFIle = "GSC/diffn_pairs.csv"
-    HALF_LENGTH_DB = 71531
-
-    if (featureSetting == CONCATENATION):
-        LENGTH_FEATURES = 1024
-        m = 100
-    elif (featureSetting == SUBTRACTION):
-        LENGTH_FEATURES = 512
-        m = 50
-
 trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-phi = []
 epoch = 40
 la = 2
 eta = 0.01
 
-trainErms = []
-validErms = []
-testErms = []
-
-trainAcc = []
-validAcc = []
-testAcc = []
-
+### FUnction for getting values according to Dataset and Featuresetting
+def getValues(datasetType, featureSetting):
+    if (datasetType == HUMAN_OBSERVED):
+        featuresFile = "Human/HumanObserved_Features_Data.csv"
+        samePairsFile = "Human/same_pairs.csv"
+        diffPairsFile = "Human/diffn_pairs.csv"
+        HALF_LENGTH_DB = 791
+        if (featureSetting == CONCATENATION):
+            LENGTH_FEATURES = 18
+            m = 7
+        elif (featureSetting == SUBTRACTION):
+            LENGTH_FEATURES = 9
+            m = 3
+    elif (datasetType == GSC):
+        featuresFile = "GSC/GSC_Features.csv"
+        samePairsFile = "GSC/same_pairs.csv"
+        diffPairsFile = "GSC/diffn_pairs.csv"
+        HALF_LENGTH_DB = 71531
+        if (featureSetting == CONCATENATION):
+            LENGTH_FEATURES = 1024
+            m = 100
+        elif (featureSetting == SUBTRACTION):
+            LENGTH_FEATURES = 512
+            m = 50
+    return featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m
 
 ### Function for importing raw data
 def importRawData(filePath):
@@ -84,7 +66,7 @@ def importRawData(filePath):
     return dataDict
 
 ### Function for importing raw target
-def importRawTarget(filePath):
+def importRawTarget(filePath, HALF_LENGTH_DB):
     df = pd.read_csv(filePath)
     if (len(df) > HALF_LENGTH_DB):
         randIndices = random.sample(np.arange(len(df)), HALF_LENGTH_DB)
@@ -97,7 +79,7 @@ def importRawTarget(filePath):
     return np.asmatrix(df)
 
 ### Function for creating the dataset
-def createDataset(dataDict, pairs, featureSetting):
+def createDataset(dataDict, pairs, featureSetting, HALF_LENGTH_DB):
     dataset = []
     for i in range(0, HALF_LENGTH_DB):
         row = []
@@ -149,6 +131,33 @@ def partitionTarget(rawTarget, tr_percent, va_percent, te_percent):
     testT = rawTarget[train_len+valid_len:]
     return trainT, validT, testT
 
+def importPreparePartitionData(featuresFile, samePairsFile, diffPairsFile, featureSetting, HALF_LENGTH_DB, LENGTH_FEATURES):
+    ### Import and Prepare Dataset
+    humanDataDict = importRawData(featuresFile)
+    samePairs = importRawTarget(samePairsFile, HALF_LENGTH_DB)
+    diffPairs = importRawTarget(diffPairsFile, HALF_LENGTH_DB)
+
+    sameDataset = createDataset(humanDataDict, samePairs, featureSetting, HALF_LENGTH_DB)
+    diffDataset = createDataset(humanDataDict, diffPairs, featureSetting, HALF_LENGTH_DB)
+
+    ### Joining and Shuffling Dataset
+    mainDataset = joinShuffleDataset(sameDataset, diffDataset)
+    print("Dataset Shape: ", mainDataset.shape)
+
+    ### Splitting Dataset into Features and Target
+    rawData = mainDataset[:, :LENGTH_FEATURES]
+    rawTarget = mainDataset[:, LENGTH_FEATURES]
+
+    print("Data Shape: ", rawData.shape)
+    print("Target Shape: ", rawTarget.shape)
+
+    trainData, validData, testData = partitionData(rawData, trainPercent, validPercent, testPercent)
+    trainTarget, validTarget, testTarget = partitionTarget(rawTarget, trainPercent, validPercent, testPercent)
+    print("Training data shape: ", trainData.shape, " Training target shape: ", trainTarget.shape)
+    print("Validation data shape: ", validData.shape, "Validation target shape: ", validTarget.shape)
+    print("Testing data shape: ", testData.shape, "Testing target shape: ", testTarget.shape)
+    return rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget
+
 ### Function for calculating Mu
 def calculateMu(data, m):
     kMeans = KMeans(n_clusters=m, random_state=0).fit(data)
@@ -172,15 +181,12 @@ def calculateBigSigma(rawData, mu, tr_percent):
         else:
             varVect.append(colVar)
 
-    print(len(varVect))
     bigSigma = np.zeros((len(varVect), len(varVect)))
     for i in range(len(varVect)):
         bigSigma[i, i] = varVect[i]
     
     bigSigma = np.dot(200, bigSigma)
     print("Big Sigma Calculated!")
-
-    #print(delIndices)
     return bigSigma, delIndices
 
 ### Function for deleting Columns with zero variance
@@ -198,7 +204,6 @@ def calculateBasisFn(dataRow, muRow, bigSigmaInv):
     x = np.subtract(dataRow, muRow)
     y = np.dot(bigSigmaInv, np.transpose(x))
     z = np.dot(x, y)
-
     phi_x = math.exp(-0.5*z)
     return phi_x
 
@@ -235,38 +240,19 @@ def calculateErmsnAcc(y, t):
 def sigmoid(X):
     return 1/(1 + np.exp(-X))
 
+### Function for performing Linear Regression
+def performLinearRegression(datasetType, featureSetting):
+    trainErms = []
+    validErms = []
+    testErms = []
+    trainAcc = []
+    validAcc = []
+    testAcc = []
+    
+    featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m = getValues(datasetType, featureSetting)
+    rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget = importPreparePartitionData(featuresFile, 
+                                                        samePairsFile, diffPairsFile, featureSetting , HALF_LENGTH_DB, LENGTH_FEATURES)
 
-
-### Import and Prepare Dataset
-humanDataDict = importRawData(featuresFile)
-samePairs = importRawTarget(samePairsFile)
-diffPairs = importRawTarget(diffPairsFIle)
-
-sameDataset = createDataset(humanDataDict, samePairs, featureSetting)
-diffDataset = createDataset(humanDataDict, diffPairs, featureSetting)
-print(sameDataset.shape)
-print(diffDataset.shape)
-
-### Joining and Shuffling Dataset
-mainDataset = joinShuffleDataset(sameDataset, diffDataset)
-print("Dataset Shape: ", mainDataset.shape)
-
-### Splitting Dataset into Features and Target
-rawData = mainDataset[:, :LENGTH_FEATURES]
-rawTarget = mainDataset[:, LENGTH_FEATURES]
-
-print("Data Shape: ", rawData.shape)
-print("Target Shape: ", rawTarget.shape)
-
-trainData, validData, testData = partitionData(rawData, trainPercent, validPercent, testPercent)
-trainTarget, validTarget, testTarget = partitionTarget(rawTarget, trainPercent, validPercent, testPercent)
-print("Training data shape: ", trainData.shape, " Training target shape: ", trainTarget.shape)
-print("Validation data shape: ", validData.shape, "Validation target shape: ", validTarget.shape)
-print("Testing data shape: ", testData.shape, "Testing target shape: ", testTarget.shape)
-
-
-### Linear Regerssion Solution
-if (doLinearReg):
     mu = calculateMu(trainData, m)
     print("Mu Shape: ", mu.shape)
 
@@ -326,14 +312,38 @@ if (doLinearReg):
     print ("Erms Testing    = " + str(np.around(min(testErms),5)))
 
 
+def performLogisticRegression():
+    featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m = getValues(datasetType, featureSetting)
+    trainErms = []
+    validErms = []
+    testErms = []
+    trainAcc = []
+    validAcc = []
+    testAcc = []
+
+
+
+
+
+
+
+    return
+
+
+### Linear Regerssion Solution
+performLinearRegression(HUMAN_OBSERVED, CONCATENATION)    
+
+
+#performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
+
 
 
 ### Logistic Regression Solution
-if(doLogisticReg):
+#if(doLogisticReg):
 
-    X_count = trainData.shape[1]
+#    X_count = trainData.shape[1]
 
-    theta = np.zeros(X_count)
+#    theta = np.zeros(X_count)
 
 
 
