@@ -21,7 +21,7 @@ trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-epoch = 40
+epoch = 50
 la = 2
 eta = 0.01
 
@@ -158,12 +158,12 @@ def importPreparePartitionData(featuresFile, samePairsFile, diffPairsFile, featu
     print("Testing data shape: ", testData.shape, "Testing target shape: ", testTarget.shape)
     return rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget
 
-### Function for calculating Mu
+### Function for calculating Means (Mu)
 def calculateMu(data, m):
     kMeans = KMeans(n_clusters=m, random_state=0).fit(data)
     return np.asmatrix(kMeans.cluster_centers_)
 
-### Function for calculating Big Sigma
+### Function for calculating Covariance Matrix (Big Sigma)
 def calculateBigSigma(rawData, mu, tr_percent):
     #bigSigma = np.zeros((rawData.shape[1], rawData.shape[1]))
     training_len = int(math.ceil(rawData.shape[0]*(tr_percent*0.01)))
@@ -236,9 +236,6 @@ def calculateErmsnAcc(y, t):
     Acc = float(count*100)/len(t)
     return Erms, Acc
 
-### Sigmoid function
-def sigmoid(X):
-    return 1/(1 + np.exp(-X))
 
 ### Function for performing Linear Regression
 def performLinearRegression(datasetType, featureSetting):
@@ -248,7 +245,7 @@ def performLinearRegression(datasetType, featureSetting):
     trainAcc = []
     validAcc = []
     testAcc = []
-    
+
     featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m = getValues(datasetType, featureSetting)
     rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget = importPreparePartitionData(featuresFile, 
                                                         samePairsFile, diffPairsFile, featureSetting , HALF_LENGTH_DB, LENGTH_FEATURES)
@@ -269,15 +266,11 @@ def performLinearRegression(datasetType, featureSetting):
     print("Testing Phi Shape: ", testPhi.shape)
 
     #Initializing Weights
-    #w = np.zeros(len(trainPhi[0]))
-    wVec = [0 for i in range(m)]
-    w = np.matrix(wVec).reshape((m, 1))
+    w = np.matrix(np.zeros(m)).reshape((m, 1))
     print("Weights shape: ", w.shape)
-
 
     ### Performing Stochastic Gradient Descent
     for i in range(epoch):
-        #trainTarget[i] = (1), w = (10x1), trainPhi[i] = (1x10)
         delta_Ed = - np.dot((trainTarget[i] - np.dot(np.transpose(w), np.transpose(trainPhi[i]))), trainPhi[i])
         delta_Ed = np.transpose(delta_Ed)
         la_delta_Ew = np.dot(la, w)
@@ -311,39 +304,88 @@ def performLinearRegression(datasetType, featureSetting):
     print ("Erms Validation = " + str(np.around(min(validErms),5)))
     print ("Erms Testing    = " + str(np.around(min(testErms),5)))
 
+    ### Sigmoid function
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
 
-def performLogisticRegression():
-    featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m = getValues(datasetType, featureSetting)
+def calculateLogisticOutput(theta, X):
+    y = np.dot(theta.transpose(), X.transpose())
+    y = y.transpose()
+    return sigmoid(y)
+
+
+### Function for performing Logistic Regression
+def performLogisticRegression(datasetType, featureSetting):
     trainErms = []
     validErms = []
     testErms = []
     trainAcc = []
     validAcc = []
     testAcc = []
+    
+    featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m = getValues(datasetType, featureSetting)
+    rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget = importPreparePartitionData(featuresFile, 
+                                                        samePairsFile, diffPairsFile, featureSetting , HALF_LENGTH_DB, LENGTH_FEATURES)
+
+    ### Initializing Weights
+    theta = np.matrix(np.zeros(trainData.shape[1])).reshape((trainData.shape[1], 1))
+    print("Weights shape: ", theta.shape)
+
+    ### Performing Stochastic Gradient Descent
+    for i in range(epoch):
+        z = np.dot(np.transpose(theta), np.transpose(trainData))
+        z = np.transpose(z)
+        a = sigmoid(z)
+        gradient = np.dot(np.transpose(a - trainTarget), trainData) / trainTarget.size
+        gradient = gradient.transpose()
+        theta -= eta * gradient
+
+        trainY = calculateLogisticOutput(theta, trainData)
+        tempErms, tempAcc = calculateErmsnAcc(trainY, trainTarget)
+        trainErms.append(tempErms)
+        trainAcc.append(tempAcc)
+
+        validY = calculateLogisticOutput(theta, validData)
+        tempErms, tempAcc = calculateErmsnAcc(validY, validTarget)
+        validErms.append(tempErms)
+        validAcc.append(tempAcc)
+
+        print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
+
+    testY = calculateLogisticOutput(theta, testData)
+    tempErms, tempAcc = calculateErmsnAcc(testY, testTarget)
+    testErms.append(tempErms)
+    testAcc.append(tempAcc)
+
+    print ('-----Logistic Regression Performance using Stochastic Gradient Descent-----')
+    print ("Dataset Type = " + datasetType)
+    print ("Feature Setting = " + featureSetting)
+    print ("eta = " + str(eta) + ", epoch = " + str(epoch))
+    print ("Erms Training   = " + str(np.around(min(trainErms),5)))
+    print ("Erms Validation = " + str(np.around(min(validErms),5)))
+    print ("Erms Testing    = " + str(np.around(min(testErms),5)))
+
+
+### Function for performing Neural Network
+def performNeuralNetwork(datasetType, featureSetting):
+    
 
 
 
-
-
-
-
-    return
 
 
 ### Linear Regerssion Solution
-performLinearRegression(HUMAN_OBSERVED, CONCATENATION)    
-
-
-#performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
-
+#performLinearRegression(HUMAN_OBSERVED, CONCATENATION) 
+#performLinearRegression(HUMAN_OBSERVED, SUBTRACTION) 
+#performLinearRegression(GSC, CONCATENATION) 
+#performLinearRegression(GSC, SUBTRACTION)    
 
 
 ### Logistic Regression Solution
-#if(doLogisticReg):
-
-#    X_count = trainData.shape[1]
-
-#    theta = np.zeros(X_count)
+#performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
+performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
+#performLogisticRegression(GSC, CONCATENATION)
+#performLogisticRegression(GSC, SUBTRACTION)
 
 
 
