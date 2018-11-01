@@ -6,7 +6,8 @@
 from sklearn.cluster import KMeans
 import numpy as np
 import pandas as pd
-import csv
+import tensorflow as tf
+from tqdm import tqdm
 import math
 import matplotlib.pyplot
 from matplotlib import pyplot as plt
@@ -21,9 +22,11 @@ trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-epoch = 50
+### Setting parameters
+epochs = 1500
 la = 2
 eta = 0.01
+batch_size = 100
 
 ### FUnction for getting values according to Dataset and Featuresetting
 def getValues(datasetType, featureSetting):
@@ -218,7 +221,7 @@ def calculatePhi(data, mu, bigSigma):
     return np.matrix(phi)
 
 ### Function for calculating Output (y)
-def calculateOutput(w, phi):
+def calculateLinearOutput(w, phi):
     y = np.dot(np.transpose(w), np.transpose(phi))
     y = np.transpose(y)
     return y
@@ -270,7 +273,7 @@ def performLinearRegression(datasetType, featureSetting):
     print("Weights shape: ", w.shape)
 
     ### Performing Stochastic Gradient Descent
-    for i in range(epoch):
+    for i in range(epochs):
         delta_Ed = - np.dot((trainTarget[i] - np.dot(np.transpose(w), np.transpose(trainPhi[i]))), trainPhi[i])
         delta_Ed = np.transpose(delta_Ed)
         la_delta_Ew = np.dot(la, w)
@@ -279,19 +282,19 @@ def performLinearRegression(datasetType, featureSetting):
         w_new = np.add(w, delta_w)
         w = w_new
 
-        trainY = calculateOutput(w, trainPhi)
+        trainY = calculateLinearOutput(w, trainPhi)
         tempErms, tempAcc = calculateErmsnAcc(trainY, trainTarget)
         trainErms.append(tempErms)
         trainAcc.append(tempAcc)
 
-        validY = calculateOutput(w, validPhi)
+        validY = calculateLinearOutput(w, validPhi)
         tempErms, tempAcc = calculateErmsnAcc(validY, validTarget)
         validErms.append(tempErms)
         validAcc.append(tempAcc)
 
         print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
 
-    testY = calculateOutput(w, testPhi)
+    testY = calculateLinearOutput(w, testPhi)
     tempErms, tempAcc = calculateErmsnAcc(testY, testTarget)
     testErms.append(tempErms)
     testAcc.append(tempAcc)
@@ -299,15 +302,31 @@ def performLinearRegression(datasetType, featureSetting):
     print ('-----Linear Regression Performance using Stochastic Gradient Descent-----')
     print ("Dataset Type = " + datasetType)
     print ("Feature Setting = " + featureSetting)
-    print ("m = " + str(m) + ", lambda = " + str(la) + ", eta = " + str(eta) + ", epoch = " + str(epoch))
+    print ("m = " + str(m) + ", lambda = " + str(la) + ", eta = " + str(eta) + ", epochs = " + str(epochs))
     print ("Erms Training   = " + str(np.around(min(trainErms),5)))
     print ("Erms Validation = " + str(np.around(min(validErms),5)))
     print ("Erms Testing    = " + str(np.around(min(testErms),5)))
 
-    ### Sigmoid function
+### Sigmoid function
 def sigmoid(z):
     return 1 / (1 + np.exp(-z))
 
+### Function for the Adding Bias Term
+def addBias(trainData, validData, testData):
+    tempTrainData = trainData
+    trainData = np.ones((trainData.shape[0], trainData.shape[1]+1))
+    trainData[:, :-1] = tempTrainData
+
+    tempValidData = validData
+    validData = np.ones((validData.shape[0], validData.shape[1]+1))
+    validData[:, :-1] = tempValidData
+
+    tempTestData = testData
+    testData = np.ones((testData.shape[0], testData.shape[1]+1))
+    testData[:, :-1] = tempTestData
+    return trainData, validData, testData
+
+### Function for calculating Output (y)
 def calculateLogisticOutput(theta, X):
     y = np.dot(theta.transpose(), X.transpose())
     y = y.transpose()
@@ -327,12 +346,14 @@ def performLogisticRegression(datasetType, featureSetting):
     rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget = importPreparePartitionData(featuresFile, 
                                                         samePairsFile, diffPairsFile, featureSetting , HALF_LENGTH_DB, LENGTH_FEATURES)
 
+    trainData, validData, testData = addBias(trainData, validData, testData)
+
     ### Initializing Weights
     theta = np.matrix(np.zeros(trainData.shape[1])).reshape((trainData.shape[1], 1))
     print("Weights shape: ", theta.shape)
 
     ### Performing Stochastic Gradient Descent
-    for i in range(epoch):
+    for i in range(epochs):
         z = np.dot(np.transpose(theta), np.transpose(trainData))
         z = np.transpose(z)
         a = sigmoid(z)
@@ -358,17 +379,83 @@ def performLogisticRegression(datasetType, featureSetting):
     testAcc.append(tempAcc)
 
     print ('-----Logistic Regression Performance using Stochastic Gradient Descent-----')
-    print ("Dataset Type = " + datasetType)
-    print ("Feature Setting = " + featureSetting)
-    print ("eta = " + str(eta) + ", epoch = " + str(epoch))
-    print ("Erms Training   = " + str(np.around(min(trainErms),5)))
-    print ("Erms Validation = " + str(np.around(min(validErms),5)))
-    print ("Erms Testing    = " + str(np.around(min(testErms),5)))
+    print ("Dataset Type            = " + datasetType)
+    print ("Feature Setting         = " + featureSetting)
+    print ("Hyperparameters: eta = " + str(eta) + ", epochs = " + str(epochs))
+    print ("Erms Training           = " + str(np.around(min(trainErms),5)))
+    print ("Accuracy Training       = " + str(np.around(max(trainAcc),2)) + "%")
+    print ("Erms Validation         = " + str(np.around(min(validErms),5)))
+    print ("Accuracy validation     = " + str(np.around(max(validAcc),2)) + "%")
+    print ("Erms Testing            = " + str(np.around(min(testErms),5)))
+    print ("Accuracy Testing        = " + str(np.around(max(testAcc),2)) + "%")
 
+
+
+# Initializing the weights to Normal Distribution
+def init_weights(shape):
+    return tf.Variable(tf.random_normal(shape, stddev=0.01))
 
 ### Function for performing Neural Network
 def performNeuralNetwork(datasetType, featureSetting):
+    NUM_HIDDEN_NEURONS_LAYER_1 = 100
+    NUM_HIDDEN_NEURONS_LAYER_2 = 100
+
+    trainAcc = []
+    validAcc = []
+    testAcc = []
     
+    featuresFile, samePairsFile, diffPairsFile, HALF_LENGTH_DB, LENGTH_FEATURES, m = getValues(datasetType, featureSetting)
+    rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget = importPreparePartitionData(featuresFile, 
+                                                        samePairsFile, diffPairsFile, featureSetting , HALF_LENGTH_DB, LENGTH_FEATURES)
+
+    # Defining Placeholder
+    inputTensor  = tf.placeholder(tf.float32, [None, LENGTH_FEATURES])
+    outputTensor = tf.placeholder(tf.float32, [None, 1])
+
+    input_hidden_weights  = init_weights([LENGTH_FEATURES, NUM_HIDDEN_NEURONS_LAYER_1])
+    #hidden_hidden_weights = init_weights([NUM_HIDDEN_NEURONS_LAYER_1, NUM_HIDDEN_NEURONS_LAYER_2])
+    hidden_output_weights = init_weights([NUM_HIDDEN_NEURONS_LAYER_2, 1])
+
+    hidden_layer = tf.nn.relu(tf.matmul(inputTensor, input_hidden_weights))
+    #hidden_layer_2 = tf.nn.relu(tf.matmul(hidden_layer, hidden_hidden_weights))
+    output_layer = tf.matmul(hidden_layer, hidden_output_weights)
+
+    #error_function = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=output_layer, labels=outputTensor))
+    error_function = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=output_layer, labels=outputTensor))
+
+    training = tf.train.GradientDescentOptimizer(eta).minimize(error_function)
+
+    prediction = tf.nn.sigmoid(output_layer)
+
+    with tf.Session() as sess:
+    
+        tf.global_variables_initializer().run()
+        
+        for epoch in tqdm(range(int(1000))):
+            
+            ### Shuffling the Training Data at each epoch
+            p = np.random.permutation(range(len(trainData)))
+            trainData  = trainData[p]
+            trainTarget = trainTarget[p]
+            
+            ### Starting Batch Training
+            for start in range(0, len(trainData), batch_size):
+                end = start + batch_size
+                sess.run(training, feed_dict={inputTensor: trainData[start:end], 
+                                              outputTensor: trainTarget[start:end]})
+
+            # Training accuracy for an epoch
+            trainAcc.append(np.mean(trainTarget ==
+                                 np.around(sess.run(prediction, feed_dict={inputTensor: trainData,
+                                                                 outputTensor: trainTarget}))))
+            if(epoch%100 == 0):
+                print(trainAcc[epoch])
+
+        # Testing
+        predictedTestTarget = sess.run(prediction, feed_dict={inputTensor: testData})
+
+    erms, acc = calculateErmsnAcc(predictedTestTarget, testTarget)
+    print(str(acc)+"%")
 
 
 
@@ -383,12 +470,13 @@ def performNeuralNetwork(datasetType, featureSetting):
 
 ### Logistic Regression Solution
 #performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
-performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
+#performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
 #performLogisticRegression(GSC, CONCATENATION)
 #performLogisticRegression(GSC, SUBTRACTION)
 
 
-
+### Neural Network Solution
+performNeuralNetwork(GSC, CONCATENATION)
 
 
 
