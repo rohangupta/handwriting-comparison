@@ -22,12 +22,6 @@ trainPercent = 80
 validPercent = 10
 testPercent = 10
 
-### Setting parameters
-epochs = 1500
-la = 2
-eta = 0.01
-batch_size = 100
-
 ### FUnction for getting values according to Dataset and Featuresetting
 def getValues(datasetType, featureSetting):
     if (datasetType == HUMAN_OBSERVED):
@@ -98,7 +92,7 @@ def createDataset(dataDict, pairs, featureSetting, HALF_LENGTH_DB):
             row = row+list1+list2
         elif (featureSetting == SUBTRACTION):
             for j in range(len(list1)):
-                row.append(list1[j] - list2[j])
+                row.append(abs(list1[j] - list2[j]))
 
         row.append(int(pairs[i, 2]))
         dataset.append(row)
@@ -242,6 +236,11 @@ def calculateErmsnAcc(y, t):
 
 ### Function for performing Linear Regression
 def performLinearRegression(datasetType, featureSetting):
+    ### Setting Hyperparameters
+    epochs = 400
+    la = 2
+    eta = 0.01
+
     trainErms = []
     validErms = []
     testErms = []
@@ -273,7 +272,7 @@ def performLinearRegression(datasetType, featureSetting):
     print("Weights shape: ", w.shape)
 
     ### Performing Stochastic Gradient Descent
-    for i in range(epochs):
+    for i in tqdm(range(500)):
         delta_Ed = - np.dot((trainTarget[i] - np.dot(np.transpose(w), np.transpose(trainPhi[i]))), trainPhi[i])
         delta_Ed = np.transpose(delta_Ed)
         la_delta_Ew = np.dot(la, w)
@@ -292,7 +291,8 @@ def performLinearRegression(datasetType, featureSetting):
         validErms.append(tempErms)
         validAcc.append(tempAcc)
 
-        print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
+        if (i%50 == 0):
+            print("Iteration: " + str(i+1) + ", Training Erms = " + str(trainErms[i]) + ", Validation Erms = " + str(validErms[i]))
 
     testY = calculateLinearOutput(w, testPhi)
     tempErms, tempAcc = calculateErmsnAcc(testY, testTarget)
@@ -335,6 +335,10 @@ def calculateLogisticOutput(theta, X):
 
 ### Function for performing Logistic Regression
 def performLogisticRegression(datasetType, featureSetting):
+    ### Setting Hyperparameters
+    epochs = 400
+    eta = 0.01
+
     trainErms = []
     validErms = []
     testErms = []
@@ -353,7 +357,7 @@ def performLogisticRegression(datasetType, featureSetting):
     print("Weights shape: ", theta.shape)
 
     ### Performing Stochastic Gradient Descent
-    for i in range(epochs):
+    for i in tqdm(range(epochs)):
         z = np.dot(np.transpose(theta), np.transpose(trainData))
         z = np.transpose(z)
         a = sigmoid(z)
@@ -391,14 +395,18 @@ def performLogisticRegression(datasetType, featureSetting):
 
 
 
-# Initializing the weights to Normal Distribution
+### Initializing the weights to Normal Distribution
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
 
 ### Function for performing Neural Network
 def performNeuralNetwork(datasetType, featureSetting):
-    NUM_HIDDEN_NEURONS_LAYER_1 = 100
-    NUM_HIDDEN_NEURONS_LAYER_2 = 100
+    EPOCHS = 1000
+    LR = 0.005
+    batch_size = 256
+
+    NUM_HIDDEN_NEURONS_LAYER_1 = 256
+    NUM_HIDDEN_NEURONS_LAYER_2 = 128
 
     trainAcc = []
     validAcc = []
@@ -408,13 +416,13 @@ def performNeuralNetwork(datasetType, featureSetting):
     rawData, rawTarget, trainData, validData, testData, trainTarget, validTarget, testTarget = importPreparePartitionData(featuresFile, 
                                                         samePairsFile, diffPairsFile, featureSetting , HALF_LENGTH_DB, LENGTH_FEATURES)
 
-    # Defining Placeholder
+    ### Defining Placeholder
     inputTensor  = tf.placeholder(tf.float32, [None, LENGTH_FEATURES])
     outputTensor = tf.placeholder(tf.float32, [None, 1])
 
     input_hidden_weights  = init_weights([LENGTH_FEATURES, NUM_HIDDEN_NEURONS_LAYER_1])
     #hidden_hidden_weights = init_weights([NUM_HIDDEN_NEURONS_LAYER_1, NUM_HIDDEN_NEURONS_LAYER_2])
-    hidden_output_weights = init_weights([NUM_HIDDEN_NEURONS_LAYER_2, 1])
+    hidden_output_weights = init_weights([NUM_HIDDEN_NEURONS_LAYER_1, 1])
 
     hidden_layer = tf.nn.relu(tf.matmul(inputTensor, input_hidden_weights))
     #hidden_layer_2 = tf.nn.relu(tf.matmul(hidden_layer, hidden_hidden_weights))
@@ -423,7 +431,7 @@ def performNeuralNetwork(datasetType, featureSetting):
     #error_function = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=output_layer, labels=outputTensor))
     error_function = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=output_layer, labels=outputTensor))
 
-    training = tf.train.GradientDescentOptimizer(eta).minimize(error_function)
+    training = tf.train.GradientDescentOptimizer(LR).minimize(error_function)
 
     prediction = tf.nn.sigmoid(output_layer)
 
@@ -431,7 +439,7 @@ def performNeuralNetwork(datasetType, featureSetting):
     
         tf.global_variables_initializer().run()
         
-        for epoch in tqdm(range(int(1000))):
+        for epoch in tqdm(range(int(EPOCHS))):
             
             ### Shuffling the Training Data at each epoch
             p = np.random.permutation(range(len(trainData)))
@@ -447,39 +455,49 @@ def performNeuralNetwork(datasetType, featureSetting):
             # Training accuracy for an epoch
             trainAcc.append(np.mean(trainTarget ==
                                  np.around(sess.run(prediction, feed_dict={inputTensor: trainData,
-                                                                 outputTensor: trainTarget}))))
+                                                                 outputTensor: trainTarget}), 0)))
+
+            validAcc.append(np.mean(validTarget ==
+                                 np.around(sess.run(prediction, feed_dict={inputTensor: validData,
+                                                                 outputTensor: validTarget}), 0)))
+
+
             if(epoch%100 == 0):
-                print(trainAcc[epoch])
+                print(trainAcc[epoch], validAcc[epoch], acc)
+
+
 
         # Testing
         predictedTestTarget = sess.run(prediction, feed_dict={inputTensor: testData})
 
     erms, acc = calculateErmsnAcc(predictedTestTarget, testTarget)
-    print(str(acc)+"%")
+    print("Testing Accuracy: " + str(np.around(acc, 2)) + "%")
 
 
 
-
+############################################################
 
 ### Linear Regerssion Solution
-#performLinearRegression(HUMAN_OBSERVED, CONCATENATION) 
-#performLinearRegression(HUMAN_OBSERVED, SUBTRACTION) 
-#performLinearRegression(GSC, CONCATENATION) 
-#performLinearRegression(GSC, SUBTRACTION)    
+performLinearRegression(HUMAN_OBSERVED, CONCATENATION) 
+performLinearRegression(HUMAN_OBSERVED, SUBTRACTION) 
+performLinearRegression(GSC, CONCATENATION) 
+performLinearRegression(GSC, SUBTRACTION)    
 
 
 ### Logistic Regression Solution
-#performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
-#performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
-#performLogisticRegression(GSC, CONCATENATION)
-#performLogisticRegression(GSC, SUBTRACTION)
+performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
+performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
+performLogisticRegression(GSC, CONCATENATION)
+performLogisticRegression(GSC, SUBTRACTION)
 
 
 ### Neural Network Solution
+performNeuralNetwork(HUMAN_OBSERVED, CONCATENATION)
+performNeuralNetwork(HUMAN_OBSERVED, SUBTRACTION)
 performNeuralNetwork(GSC, CONCATENATION)
+performNeuralNetwork(GSC, SUBTRACTION)
 
-
-
+############################################################
 
 
 
