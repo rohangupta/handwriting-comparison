@@ -336,7 +336,7 @@ def calculateLogisticOutput(theta, X):
 ### Function for performing Logistic Regression
 def performLogisticRegression(datasetType, featureSetting):
     ### Setting Hyperparameters
-    epochs = 400
+    epochs = 10
     eta = 0.01
 
     trainErms = []
@@ -463,7 +463,7 @@ def performNeuralNetwork(datasetType, featureSetting):
 
 
             if(epoch%100 == 0):
-                print(trainAcc[epoch], validAcc[epoch], acc)
+                print(trainAcc[epoch], validAcc[epoch])
 
 
 
@@ -479,23 +479,23 @@ def performNeuralNetwork(datasetType, featureSetting):
 
 ### Linear Regerssion Solution
 performLinearRegression(HUMAN_OBSERVED, CONCATENATION) 
-performLinearRegression(HUMAN_OBSERVED, SUBTRACTION) 
-performLinearRegression(GSC, CONCATENATION) 
-performLinearRegression(GSC, SUBTRACTION)    
+#performLinearRegression(HUMAN_OBSERVED, SUBTRACTION) 
+#performLinearRegression(GSC, CONCATENATION) 
+#performLinearRegression(GSC, SUBTRACTION)    
 
 
 ### Logistic Regression Solution
 performLogisticRegression(HUMAN_OBSERVED, CONCATENATION)
-performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
-performLogisticRegression(GSC, CONCATENATION)
-performLogisticRegression(GSC, SUBTRACTION)
+#performLogisticRegression(HUMAN_OBSERVED, SUBTRACTION)
+#performLogisticRegression(GSC, CONCATENATION)
+#performLogisticRegression(GSC, SUBTRACTION)
 
 
 ### Neural Network Solution
 performNeuralNetwork(HUMAN_OBSERVED, CONCATENATION)
-performNeuralNetwork(HUMAN_OBSERVED, SUBTRACTION)
-performNeuralNetwork(GSC, CONCATENATION)
-performNeuralNetwork(GSC, SUBTRACTION)
+#performNeuralNetwork(HUMAN_OBSERVED, SUBTRACTION)
+#performNeuralNetwork(GSC, CONCATENATION)
+#performNeuralNetwork(GSC, SUBTRACTION)
 
 ############################################################
 
